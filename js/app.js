@@ -1,5 +1,6 @@
 import { score, recoveryColor, recoveryWords, strainTarget } from './scoring.js';
-import { demoDays } from './demo.js';
+import { demoDays, DEMO_VERSION } from './demo.js';
+import { mountHrChart } from './hr-chart.js';
 
 // ---- storage (everything stays on this device) -----------------------------
 const store = {
@@ -36,9 +37,11 @@ const fmtTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', m
 const fmtNum = (n) => (n == null ? '–' : n.toLocaleString());
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
+const localKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 function dateLabel(key) {
-  const today = new Date().toISOString().slice(0, 10);
-  const yest = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const today = localKey(new Date());
+  const yest = localKey(new Date(Date.now() - 864e5));
   if (key === today) return 'Today';
   if (key === yest) return 'Yesterday';
   return new Date(key + 'T12:00:00').toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'short' });
@@ -104,6 +107,11 @@ function renderToday(d) {
     </section>
 
     <section class="card">
+      <h2>Heart rate</h2>
+      <div id="hrChart"></div>
+    </section>
+
+    <section class="card">
       <h2>Strain</h2>
       <div class="big" style="color:var(--strain)">${d.strain != null ? d.strain.toFixed(1) : '–'} <small style="font-size:14px;color:var(--muted)">/ 21</small></div>
       ${d.zones ? `<div class="zones">${d.zones.map((m, i) => {
@@ -120,6 +128,44 @@ function renderToday(d) {
     </section>
 
     ${sleepCard(d, true)}`;
+  mountHrChart(document.getElementById('hrChart'), scored, d.date);
+}
+
+const STAGES = {
+  w: ['Awake', 'var(--awake)'],
+  r: ['REM', 'var(--rem)'],
+  c: ['Core', 'var(--core)'],
+  d: ['Deep', 'var(--deep)'],
+  s: ['Asleep', 'var(--sleep)'],
+};
+
+// Bar graph of the night: one row per stage, a block for each stretch of time in it.
+function hypnogram(s) {
+  if (!s.segs?.length) return '<p class="note" style="margin-top:12px">Re-import your Health export to see the stage-by-stage outline of each night.</p>';
+  const rows = s.staged ? ['w', 'r', 'c', 'd'] : ['w', 's'];
+  const total = Math.max(...s.segs.map((x) => x[1]), 1);
+  const W = 320, H = s.staged ? 150 : 90, L = 46, R = 6, B = 18;
+  const rowH = (H - B) / rows.length;
+  const x = (m) => L + (m / total) * (W - L - R);
+  const y = (code) => rows.indexOf(code === 's' && s.staged ? 'c' : code) * rowH;
+  let ticks = '';
+  const first = new Date(s.start);
+  const stepH = total > 9 * 60 ? 2 : 1;
+  for (let h = 1; ; h++) {
+    const tm = new Date(first); tm.setMinutes(0, 0, 0); tm.setHours(first.getHours() + h);
+    const m = (tm - s.start) / 6e4;
+    if (m >= total) break;
+    if (tm.getHours() % stepH) continue;
+    ticks += `<line x1="${x(m)}" x2="${x(m)}" y1="0" y2="${H - B}" stroke="var(--line)"/>
+      <text class="axis" x="${x(m)}" y="${H - 4}" text-anchor="middle">${tm.toLocaleTimeString([], { hour: 'numeric' }).replace(/\s?([AP])M/i, (_, a) => a.toLowerCase())}</text>`;
+  }
+  const step = s.segs.map((g, i) => `${i ? 'L' : 'M'}${x(g[0])},${y(g[2]) + rowH / 2} L${x(g[1])},${y(g[2]) + rowH / 2}`).join(' ');
+  return `<div class="chart" style="margin-top:14px"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Sleep stages through the night">
+    ${rows.map((c, i) => `<text class="axis" x="0" y="${i * rowH + rowH / 2 + 3}">${STAGES[c][0]}</text>`).join('')}
+    ${ticks}
+    <path d="${step}" fill="none" stroke="var(--muted)" stroke-width="1" opacity=".35"/>
+    ${s.segs.map((g) => `<rect x="${x(g[0])}" y="${y(g[2]) + 3}" width="${Math.max(1.2, x(g[1]) - x(g[0]))}" height="${rowH - 6}" rx="2" fill="${STAGES[g[2]][1]}"><title>${STAGES[g[2]][0]} ${fmtTime(s.start + g[0] * 6e4)}–${fmtTime(s.start + g[1] * 6e4)}</title></rect>`).join('')}
+  </svg></div>`;
 }
 
 function sleepCard(d, compact) {
@@ -133,6 +179,7 @@ function sleepCard(d, compact) {
     <h2>Sleep</h2>
     <div class="big" style="color:var(--sleep)">${fmtH(s.asleep)} <small style="font-size:14px;color:var(--muted)">of ${fmtH(d.sleepNeed)} needed</small></div>
     <p>${fmtTime(s.start)} → ${fmtTime(s.end)} · ${d.sleepPerf}% performance</p>
+    ${hypnogram(s)}
     <div class="bar" style="height:14px;margin-top:10px">${segs.map(([k, m]) => `<div style="width:${(m / span) * 100}%;background:var(--${k === 'sleep' ? 'sleep' : k})"></div>`).join('')}</div>
     <div class="legend">${segs.map(([k, m]) => `<span><i style="background:var(--${k === 'sleep' ? 'sleep' : k})"></i>${k[0].toUpperCase() + k.slice(1)} ${fmtH(m)}</span>`).join('')}</div>
     ${compact ? '' : `<div class="stats">
@@ -321,8 +368,7 @@ view.addEventListener('click', (e) => {
   if (t.dataset.go) go(t.dataset.go);
   else if (t.dataset.range) { trendRange = +t.dataset.range; renderTrends(); }
   else if (t.id === 'tryDemo') {
-    raw = demoDays(); isDemo = true;
-    store.set('days', raw); store.set('demo', true);
+    loadDemo();
     rescore(); idx = scored.length - 1; go('today');
   } else if (t.id === 'clear') {
     if (confirm('Delete all Pulse data from this device?')) {
@@ -342,7 +388,7 @@ view.addEventListener('change', (e) => {
 });
 
 let touchX = null;
-view.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, { passive: true });
+view.addEventListener('touchstart', (e) => { touchX = e.target.closest('.hr-chart') ? null : e.touches[0].clientX; }, { passive: true });
 view.addEventListener('touchend', (e) => {
   if (touchX == null || (tab !== 'today' && tab !== 'sleep')) return;
   const dx = e.changedTouches[0].clientX - touchX;
@@ -353,6 +399,14 @@ view.addEventListener('touchend', (e) => {
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+function loadDemo() {
+  raw = demoDays(); isDemo = true;
+  store.set('days', raw); store.set('demo', DEMO_VERSION);
+}
+
+// Refresh demo data saved by an older version so it has the newer charts.
+if (isDemo && isDemo !== DEMO_VERSION) loadDemo();
 
 rescore();
 idx = scored.length - 1;

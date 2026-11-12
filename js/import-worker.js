@@ -71,7 +71,8 @@ function handleRecord(tag) {
     case 'hr': {
       let a = hrByDay.get(key);
       if (!a) hrByDay.set(key, (a = []));
-      a.push(toMs(start), v);
+      // time, bpm, and minute of the local day (for the 5-minute heart rate chart)
+      a.push(toMs(start), v, +start.slice(11, 13) * 60 + +start.slice(14, 16));
       break;
     }
     case 'rhr': case 'hrv': case 'resp':
@@ -175,9 +176,11 @@ function summariseSleep() {
           if (r.stage !== 'asleep') { s[r.stage] += min; s.staged = true; }
         }
       }
-      if (s.asleep > 0 && (!best || s.asleep > best.asleep)) best = s;
+      if (s.asleep > 0 && (!best || s.asleep > best.asleep)) { best = s; best.recs = recs; }
     }
     if (best && best.asleep >= 30) {
+      best.segs = sleepSegments(best.recs, best.start);
+      delete best.recs;
       for (const k of ['asleep', 'core', 'deep', 'rem', 'awake', 'inBed']) best[k] = Math.round(best[k]);
       out.set(key, best);
     }
@@ -185,9 +188,28 @@ function summariseSleep() {
   return out;
 }
 
+// The night's stages as [startMin, endMin, code] from bedtime, merged where
+// the same stage continues. Codes: d deep, c core, r REM, w awake, s asleep.
+const STAGE_CODE = { deep: 'd', core: 'c', rem: 'r', awake: 'w', asleep: 's' };
+function sleepSegments(recs, start) {
+  const segs = [];
+  for (const r of recs.filter((x) => x.stage !== 'inBed').sort((a, b) => a.start - b.start)) {
+    const seg = [Math.round((r.start - start) / 6e4), Math.round((r.end - start) / 6e4), STAGE_CODE[r.stage]];
+    const last = segs[segs.length - 1];
+    if (last && last[2] === seg[2] && seg[0] <= last[1] + 1) last[1] = Math.max(last[1], seg[1]);
+    else if (seg[1] > seg[0]) segs.push(seg);
+  }
+  return segs;
+}
+
 function summariseHr(samples, rhr, maxHr) {
   const pairs = [];
-  for (let i = 0; i < samples.length; i += 2) pairs.push([samples[i], samples[i + 1]]);
+  const sum5 = new Array(288).fill(0), n5 = new Array(288).fill(0);
+  for (let i = 0; i < samples.length; i += 3) {
+    pairs.push([samples[i], samples[i + 1]]);
+    const b = Math.floor(samples[i + 2] / 5);
+    sum5[b] += samples[i + 1]; n5[b]++;
+  }
   pairs.sort((a, b) => a[0] - b[0]);
   const zones = [0, 0, 0, 0, 0];
   let trimp = 0, peak = 0, sum = 0;
@@ -208,6 +230,7 @@ function summariseHr(samples, rhr, maxHr) {
     maxHr: Math.round(peak),
     avgHr: pairs.length ? Math.round(sum / pairs.length) : null,
     zones: zones.map(Math.round),
+    hrBins: sum5.map((s, i) => (n5[i] ? Math.round(s / n5[i]) : 0)), // 288 five-minute averages, 0 = no reading
   };
 }
 
@@ -231,7 +254,7 @@ function finish(maxHrSetting) {
       workouts: workouts.filter((w) => w.date === key).map(({ date, ...w }) => w),
     };
     const hr = hrByDay.get(key);
-    if (hr && hr.length > 4) Object.assign(out, summariseHr(hr, rhr || 60, maxHrSetting));
+    if (hr && hr.length > 6) Object.assign(out, summariseHr(hr, rhr || 60, maxHrSetting));
     result[key] = out;
   }
   return result;

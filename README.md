@@ -55,6 +55,7 @@ Then open http://localhost:5173 and tap **Try it with demo data**.
 - `index.html`, `css/styles.css` — the app shell
 - `js/app.js` — screens, settings, storage
 - `js/scoring.js` — recovery / strain / sleep maths
+- `js/hr-chart.js` — the drag-through-the-days heart rate chart
 - `js/import-worker.js` — streams the Health export (zip or xml) without loading it all into memory
 - `js/demo.js` — demo data
 - `sw.js`, `manifest.webmanifest`, `icons/` — offline + home-screen install
