@@ -1,6 +1,6 @@
 {
-  "name": "Pulse",
-  "short_name": "Pulse",
+  "name": "Field Line",
+  "short_name": "Field Line",
   "description": "Recovery, strain and sleep scores from your Apple Health data.",
   "start_url": "./",
   "scope": "./",

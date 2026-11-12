@@ -76,7 +76,7 @@ function renderEmpty() {
   view.innerHTML = `<div class="empty">
     <svg width="84" height="84" viewBox="0 0 130 130"><circle cx="65" cy="65" r="52" fill="none" stroke="var(--card2)" stroke-width="11"/>
     <circle cx="65" cy="65" r="52" fill="none" stroke="var(--green)" stroke-width="11" stroke-linecap="round" stroke-dasharray="230 400" transform="rotate(-90 65 65)"/></svg>
-    <h1>Welcome to Pulse</h1>
+    <h1>Welcome to Field Line</h1>
     <p>Daily recovery, strain and sleep scores from your Apple Health data. Nothing leaves your phone.</p>
     <button class="btn" data-go="settings">Import Apple Health data</button>
     <button class="btn ghost" id="tryDemo">Try it with demo data</button>
@@ -292,7 +292,7 @@ function renderSettings() {
       <p><b style="color:var(--text)">Recovery</b> compares last night's HRV, resting heart rate and breathing rate with your own 30-day average, and adds how well you slept.</p>
       <p><b style="color:var(--text)">Strain</b> (0–21) adds up time spent with your heart rate well above resting, weighting harder efforts more, on a scale that gets harder to climb the higher you go.</p>
       <p><b style="color:var(--text)">Sleep</b> is time asleep compared with what you needed.</p>
-      <p class="note">Pulse is not a medical device. Scores are guides only.</p>
+      <p class="note">Field Line is not a medical device. Scores are guides only.</p>
     </section>`;
 }
 
@@ -343,7 +343,7 @@ function render() {
   $('#prev').style.visibility = $('#next').style.visibility = dated && d ? 'visible' : 'hidden';
   $('#prev').disabled = idx <= 0;
   $('#next').disabled = idx >= scored.length - 1;
-  $('#dateLabel').textContent = dated && d ? dateLabel(d.date) : { trends: 'Trends', settings: 'Settings' }[tab] || 'Pulse';
+  $('#dateLabel').textContent = dated && d ? dateLabel(d.date) : { trends: 'Trends', settings: 'Settings' }[tab] || 'Field Line';
   $('#dateSub').textContent = dated && d && isDemo ? 'Demo data' : dated && d ? d.date : '';
   if (tab === 'settings') return renderSettings();
   if (!scored.length) return renderEmpty();
@@ -371,7 +371,7 @@ view.addEventListener('click', (e) => {
     loadDemo();
     rescore(); idx = scored.length - 1; go('today');
   } else if (t.id === 'clear') {
-    if (confirm('Delete all Pulse data from this device?')) {
+    if (confirm('Delete all Field Line data from this device?')) {
       raw = {}; isDemo = false; store.del('days'); store.del('demo'); rescore(); render();
     }
   } else if (t.id === 'pick') $('#file').click();

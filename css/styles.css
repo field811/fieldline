@@ -24,7 +24,7 @@ html, body { margin: 0; background: var(--bg); color: var(--text); }
 body {
   font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
-  padding: calc(var(--safe-t) + 64px) 0 calc(var(--safe-b) + 76px);
+  padding: calc(var(--safe-t) + 96px) 0 calc(var(--safe-b) + 76px);
   min-height: 100vh;
 }
 button { font: inherit; color: inherit; cursor: pointer; }
@@ -32,10 +32,16 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .top {
   position: fixed; inset: 0 0 auto 0; z-index: 5;
   padding: calc(var(--safe-t) + 8px) 12px 8px;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   background: rgba(11, 15, 20, .92); backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
 }
+.brand {
+  width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 15px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  padding: 2px 0 2px;
+}
+.brand svg { width: 30px; height: 15px; color: var(--green); }
 .top .date { text-align: center; font-weight: 700; letter-spacing: .02em; }
 .top .sub { font-size: 12px; color: var(--muted); font-weight: 500; }
 .nav { width: 44px; height: 44px; border: 0; background: none; font-size: 28px; border-radius: 22px; }
