@@ -93,7 +93,7 @@ export function mountHrChart(el, scored, focusDate) {
     const b0 = Math.max(0, Math.floor(center - BINS / 2) - 1), b1 = Math.min(total - 1, Math.ceil(center + BINS / 2) + 1);
 
     // horizontal grid + bpm labels
-    ctx.font = '10px -apple-system, Segoe UI, sans-serif';
+    ctx.font = '300 10px ' + css('--font');
     ctx.textBaseline = 'middle';
     const step = tl.hi - tl.lo > 100 ? 40 : 20;
     for (let v = Math.ceil(tl.lo / step) * step; v <= tl.hi; v += step) {
@@ -213,6 +213,7 @@ export function mountHrChart(el, scored, focusDate) {
 
   const onResize = () => { if (!document.body.contains(canvas)) return window.removeEventListener('resize', onResize); size(); draw(); };
   window.addEventListener('resize', onResize);
+  document.fonts?.ready.then(() => document.body.contains(canvas) && draw());
   size();
   draw();
 }

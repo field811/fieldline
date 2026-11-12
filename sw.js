@@ -1,5 +1,5 @@
 // Offline support: serve the app shell from cache, refresh it in the background.
-const CACHE = 'fieldline-v3';
+const CACHE = 'fieldline-v4';
 const SHELL = [
   './', 'index.html', 'css/styles.css', 'js/app.js', 'js/scoring.js', 'js/demo.js', 'js/import-worker.js', 'js/hr-chart.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-512.png',
