@@ -1,6 +1,7 @@
 import { score, recoveryColor, recoveryWords, strainTarget } from './scoring.js';
 import { demoDays, DEMO_VERSION } from './demo.js';
 import { mountHrChart } from './hr-chart.js';
+import { strainSleepChart, sleepRecoveryScatter, insights } from './insights.js';
 
 // ---- storage (everything stays on this device) -----------------------------
 const store = {
@@ -239,6 +240,14 @@ function renderTrends() {
   const avgSleep = nights.length ? nights.reduce((a, x) => a + x.sleep.asleep, 0) / nights.length : null;
   view.innerHTML = `
     <div class="seg">${[7, 30, 90].map((n) => `<button data-range="${n}" class="${n === trendRange ? 'on' : ''}">${n} days</button>`).join('')}</div>
+    <section class="card chart"><h2>Strain &amp; sleep</h2>
+      <p class="note" style="margin-bottom:8px">How hard each day was, how long you slept that night, and how recovered you were the next morning.</p>
+      ${strainSleepChart(scored, trendRange)}</section>
+    <section class="card"><h2>What your data says</h2>
+      <p class="note">From your last 90 days.</p>
+      ${insights(scored)}</section>
+    <section class="card chart"><h2>Sleep vs recovery</h2>
+      ${sleepRecoveryScatter(scored.slice(-Math.max(trendRange, 30)))}</section>
     <section class="card chart"><h2>Recovery · avg ${avg('recovery') != null ? Math.round(avg('recovery')) + '%' : '–'}</h2>
       ${bars(r.map((x) => ({ v: x.recovery, label: x.date.slice(8), color: recoveryColor(x.recovery) })), 100, (v) => v + '%')}</section>
     <section class="card chart"><h2>Strain · avg ${avg('strain')?.toFixed(1) ?? '–'}</h2>

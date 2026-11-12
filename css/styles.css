@@ -145,3 +145,10 @@ ol.steps b { color: var(--text); }
 .empty p { color: var(--muted); margin: 0 0 20px; }
 
 b, strong { font-weight: 500; }
+
+/* insights */
+.insights { list-style: none; margin: 10px 0 0; padding: 0; }
+.insights li { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: start; padding: 12px 0; border-top: 1px solid var(--line); color: var(--muted); }
+.insights li:first-child { border-top: 0; }
+.ins-big { font-size: 22px; font-weight: 300; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.insights b { color: var(--text); }
