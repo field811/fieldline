@@ -114,7 +114,12 @@ function renderToday(d) {
   const target = strainTarget(d.recovery);
   const sleepText = d.sleepPerf != null ? d.sleepPerf + '%' : '–';
   const w = d.workouts || [];
-  view.innerHTML = `${ci.top}
+  const last = store.get('lastSync', 0);
+  const syncBar = idx === scored.length - 1 ? `<div class="syncbar">
+      <span>${last ? `Synced ${ago(last)}` : 'Bring in today\'s Health data'}</span>
+      <button class="link" id="syncBtn">↻ Sync</button>
+    </div>` : '';
+  view.innerHTML = `${syncBar}${ci.top}
     <div class="dials">
       ${dial(d.recovery, 100, recoveryColor(d.recovery), 'Recovery', d.recovery != null ? d.recovery + '%' : '–')}
       ${dial(d.strain, 21, 'var(--strain)', 'Strain', d.strain != null ? d.strain.toFixed(1) : '–')}
@@ -293,7 +298,45 @@ function renderSettings() {
   const n = Object.keys(raw).length;
   view.innerHTML = `
     <section class="card">
-      <h2>Import Apple Health</h2>
+      <h2>Daily auto-sync</h2>
+      <p>An iPhone Shortcut collects your Health data by itself every morning. Then you just tap <b>↻ Sync</b> on Today.</p>
+      <button class="btn" id="syncBtn2" style="margin-top:10px">↻ Sync now</button>
+      <p class="note" style="margin-top:8px">${store.get('lastSync', 0) ? `Last synced ${ago(store.get('lastSync', 0))}.` : 'Not set up yet. Follow the steps below, once.'}</p>
+      <details class="guide">
+        <summary>Set up the Shortcut (about 15 minutes, once)</summary>
+        <h3>1. Collect the data</h3>
+        <ol class="steps">
+          <li>Open the <b>Shortcuts</b> app, tap <b>+</b> and name it <b>Field Line Sync</b>.</li>
+          <li>Add the action <b>Find Health Samples</b>. Set the type to <b>Heart Rate</b>. Tap <b>Add Filter</b> and set it to <b>Start Date · is in the last · 3 days</b>. Set <b>Sort by</b> to <b>Start Date</b>, <b>Oldest First</b>.</li>
+          <li>Add three more <b>Find Health Samples</b> actions the same way for <b>Heart Rate Variability</b>, <b>Resting Heart Rate</b> and <b>Sleep Analysis</b>.</li>
+        </ol>
+        <h3>2. Write it out</h3>
+        <ol class="steps" start="4">
+          <li>Copy this outline, then add a <b>Text</b> action and paste it in:
+            <button class="btn ghost" id="copyTemplate" style="margin:8px 0">Copy the outline</button></li>
+          <li>Under each <b>#</b> line, insert the matching variable. Tap the blank line, then <b>Select Variable</b> in the bar above the keyboard, and tap that <b>Find Health Samples</b> action. Then tap the blue bubble and pick:
+            <ul>
+              <li><b>.date</b> lines → <b>Start Date</b></li>
+              <li><b>.end</b> → <b>End Date</b>, <b>.value</b> → <b>Value</b>, <b>.source</b> → <b>Source</b></li>
+            </ul>
+            For every date, also set <b>Date Format</b> to <b>ISO 8601</b> and turn on <b>Include ISO 8601 Time</b>.</li>
+          <li>Add <b>Copy to Clipboard</b> (it copies the Text).</li>
+          <li>Add <b>Save File</b>: turn off <b>Ask Where to Save</b>, set the path to <b>fieldline-sync.txt</b> and turn on <b>Overwrite If File Exists</b>. It saves into iCloud Drive › Shortcuts.</li>
+          <li>Add <b>Show Notification</b>: “Good morning. Open Field Line to sync and check in.”</li>
+        </ol>
+        <h3>3. Run it every morning</h3>
+        <ol class="steps" start="9">
+          <li>In Shortcuts, tap <b>Automation</b> → <b>+</b> → <b>Time of Day</b>. Choose <b>7:00 am</b>, <b>Daily</b>, and <b>Run Immediately</b>.</li>
+          <li>Pick <b>Field Line Sync</b> and tap <b>Done</b>.</li>
+        </ol>
+        <h3>4. Each morning</h3>
+        <p>Tap the notification, open Field Line and tap <b>↻ Sync</b>. If your iPhone asks to paste, tap <b>Allow Paste</b>. If you've copied something else since 7 am, Field Line opens Files instead. Pick <b>fieldline-sync.txt</b> in iCloud Drive › Shortcuts.</p>
+        <p class="note">Sync brings in heart rate, HRV, resting heart rate and sleep. Do a full import below every few weeks to fill in steps, calories, workouts, breathing rate and blood oxygen.</p>
+      </details>
+    </section>
+
+    <section class="card">
+      <h2>Full import from Apple Health</h2>
       <ol class="steps">
         <li>Open the <b>Health</b> app on your iPhone.</li>
         <li>Tap your <b>profile picture</b> (top right).</li>
@@ -348,6 +391,91 @@ function renderSettings() {
 }
 
 // ---- import -------------------------------------------------------------------
+// New readings fill in or replace what's stored, but never wipe out a value with
+// nothing (a quick sync may not include steps, workouts and so on).
+function mergeDays(days) {
+  for (const [date, day] of Object.entries(days)) {
+    const keep = { ...(raw[date] || {}) };
+    for (const [k, v] of Object.entries(day)) {
+      if (v == null || (Array.isArray(v) && !v.length)) continue;
+      keep[k] = v;
+    }
+    raw[date] = keep;
+  }
+}
+
+function toast(msg, ms = 4000) {
+  const t = $('#toast');
+  t.innerHTML = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+const ago = (ms) => {
+  const m = Math.round((Date.now() - ms) / 6e4);
+  return m < 2 ? 'just now' : m < 60 ? `${m} min ago` : m < 48 * 60 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
+
+// Quick daily sync from the "Field Line Sync" Shortcut: clipboard first, then the saved file.
+async function syncNow() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (/^\s*FIELDLINE1/.test(text)) return runSync(text);
+  } catch {}
+  $('#syncFile').click();
+}
+
+function runSync(text) {
+  toast('Syncing…', 20000);
+  const worker = new Worker(new URL('./import-worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = (e) => {
+    const m = e.data;
+    if (m.error) { worker.terminate(); return toast(`<span class="down">${esc(m.error)}</span>`, 8000); }
+    if (!m.done) return;
+    worker.terminate();
+    if (isDemo) { raw = {}; journal = {}; store.del('journal'); isDemo = false; store.set('demo', false); }
+    mergeDays(m.days);
+    store.set('days', raw);
+    store.set('lastSync', Date.now());
+    rescore();
+    idx = scored.length - 1;
+    render();
+    const n = Object.keys(m.days).length;
+    toast(n ? `<span class="up">Synced ${n} day${n === 1 ? '' : 's'} (${fmtNum(m.records)} readings).</span>${m.bad ? ` Skipped ${m.bad} unreadable.` : ''}` : 'No new days in the Sync file yet.');
+  };
+  worker.onerror = (e) => toast(`<span class="down">Sync failed: ${esc(e.message || 'error')}</span>`, 8000);
+  worker.postMessage({ syncText: text, daysBack: 14, maxHr: maxHr() });
+}
+
+$('#syncFile').addEventListener('change', async (e) => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) runSync(await f.text());
+});
+
+const SYNC_TEMPLATE = `FIELDLINE1
+#hr.date
+
+#hr.value
+
+#hrv.date
+
+#hrv.value
+
+#rhr.date
+
+#rhr.value
+
+#sleep.date
+
+#sleep.end
+
+#sleep.value
+
+#sleep.source
+`;
+
 function runImport(file) {
   const status = $('#importStatus'), prog = $('.progress'), bar = prog.firstElementChild;
   prog.hidden = false;
@@ -369,7 +497,7 @@ function runImport(file) {
       worker.terminate();
       if (isDemo) { raw = {}; journal = {}; store.del('journal'); }
       isDemo = false;
-      Object.assign(raw, m.days);
+      mergeDays(m.days);
       const saved = store.set('days', raw);
       store.set('demo', false);
       rescore();
@@ -426,6 +554,10 @@ view.addEventListener('click', (e) => {
       raw = {}; isDemo = false; journal = {}; store.del('days'); store.del('demo'); store.del('journal'); rescore(); render();
     }
   } else if (t.id === 'pick') $('#file').click();
+  else if (t.id === 'syncBtn' || t.id === 'syncBtn2') syncNow();
+  else if (t.id === 'copyTemplate') {
+    navigator.clipboard.writeText(SYNC_TEMPLATE).then(() => toast('Copied. Paste it into the Shortcut\'s Text action.'), () => toast('Couldn\'t copy. Type the lines in by hand.'));
+  }
   // morning check-in
   else if (t.dataset.feel) {
     draft.feel = draft.feel === +t.dataset.feel ? 0 : +t.dataset.feel;

@@ -163,7 +163,11 @@ function summariseSleep() {
   const out = new Map();
   for (const [key, bySrc] of nights) {
     let best = null;
-    for (const recs of Object.values(bySrc)) {
+    for (const all of Object.values(bySrc)) {
+      // If this source has stages, drop plain "asleep" records that overlap them
+      // (happens when the Shortcut mixes iPhone and Watch sleep under one source).
+      const hasStages = all.some((r) => r.stage === 'core' || r.stage === 'deep' || r.stage === 'rem');
+      const recs = hasStages ? all.filter((r) => r.stage !== 'asleep') : all;
       const s = { start: Infinity, end: 0, asleep: 0, core: 0, deep: 0, rem: 0, awake: 0, inBed: 0, staged: false };
       for (const r of recs) {
         const min = (r.end - r.start) / 60000;
@@ -260,10 +264,88 @@ function finish(maxHrSetting) {
   return result;
 }
 
+// ---- daily Shortcut file ---------------------------------------------------------
+// The "Field Line Sync" Shortcut writes a small text file:
+//   FIELDLINE1
+//   #hr.date      ← one ISO date per line
+//   #hr.value     ← matching values, same order
+//   #sleep.date / #sleep.end / #sleep.value / #sleep.source ...
+const SYNC_TYPES = {
+  hr: HK + 'HeartRate', hrv: HK + 'HeartRateVariabilitySDNN', rhr: HK + 'RestingHeartRate',
+  resp: HK + 'RespiratoryRate', spo2: HK + 'OxygenSaturation', steps: HK + 'StepCount',
+  kcal: HK + 'ActiveEnergyBurned', sleep: 'HKCategoryTypeIdentifierSleepAnalysis',
+};
+
+// Any date the Shortcut gives us → "2026-11-14 07:12:44 +1100" in this phone's time zone.
+function toAppleDate(s) {
+  const ms = Date.parse(s);
+  if (isNaN(ms)) return null;
+  const d = new Date(ms), p = (n) => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset();
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())} ${off >= 0 ? '+' : '-'}${p(Math.floor(Math.abs(off) / 60))}${p(Math.abs(off) % 60)}`;
+}
+
+function sleepValue(v) {
+  v = v.toLowerCase();
+  if (v.includes('deep')) return 'HKCategoryValueSleepAnalysisAsleepDeep';
+  if (v.includes('rem')) return 'HKCategoryValueSleepAnalysisAsleepREM';
+  if (v.includes('core')) return 'HKCategoryValueSleepAnalysisAsleepCore';
+  if (v.includes('awake')) return 'HKCategoryValueSleepAnalysisAwake';
+  if (v.includes('bed')) return 'HKCategoryValueSleepAnalysisInBed';
+  return 'HKCategoryValueSleepAnalysisAsleepUnspecified';
+}
+
+function number(v) {
+  v = String(v || '').trim();
+  if (/^\d{1,3}(,\d{3})+(\.\d+)?/.test(v)) v = v.replace(/,/g, ''); // 1,234
+  else v = v.replace(',', '.');                                     // 0,97
+  return parseFloat(v);
+}
+
+function readSync(text) {
+  if (!/^\s*FIELDLINE1/.test(text)) throw new Error("That isn't a Field Line Sync file. Run the Field Line Sync shortcut first.");
+  const cols = {};
+  let cur = null;
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (t.startsWith('#')) { cur = t.slice(1).toLowerCase(); cols[cur] = []; }
+    else if (cur && t) cols[cur].push(t);
+  }
+  let bad = 0, read = 0;
+  const clean = (s) => String(s || 'Shortcut').replace(/"/g, '');
+  for (const [k, type] of Object.entries(SYNC_TYPES)) {
+    const dates = cols[k + '.date'] || [], ends = cols[k + '.end'] || [], vals = cols[k + '.value'] || [], srcs = cols[k + '.source'] || [];
+    for (let i = 0; i < dates.length; i++) {
+      const s = toAppleDate(dates[i]);
+      if (!s) { bad++; continue; }
+      const e = (ends[i] && toAppleDate(ends[i])) || s;
+      const v = k === 'sleep' ? sleepValue(vals[i] || '') : String(number(vals[i]));
+      if (k !== 'sleep' && v === 'NaN') { bad++; continue; }
+      handleRecord(` type="${type}" sourceName="${clean(srcs[i])}" startDate="${s}" endDate="${e}" value="${v}"`);
+      read++;
+    }
+  }
+  if (!read && bad) throw new Error("Couldn't read the dates in the Sync file. In the Shortcut's Text action, set each date's Date Format to ISO 8601 with time.");
+  return bad;
+}
+
 // ---- entry point ------------------------------------------------------------
 self.onmessage = async (e) => {
-  const { file, daysBack, maxHr } = e.data;
+  const { file, daysBack, maxHr, syncText } = e.data;
   cutoffKey = new Date(Date.now() - daysBack * 864e5).toISOString().slice(0, 10);
+  if (syncText != null) {
+    try {
+      const bad = readSync(syncText);
+      const result = finish(maxHr);
+      // The Shortcut's window starts part-way through its first day, so that day is incomplete. Skip it.
+      const keys = Object.keys(result).sort();
+      if (keys.length > 1) delete result[keys[0]];
+      self.postMessage({ done: true, days: result, records, bad });
+    } catch (err) {
+      self.postMessage({ error: err.message || String(err) });
+    }
+    return;
+  }
   try {
     const isZip = /\.zip$/i.test(file.name);
     let found = !isZip;
