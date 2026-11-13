@@ -2,6 +2,7 @@ import { score, recoveryColor, recoveryWords, strainTarget } from './scoring.js'
 import { demoDays, DEMO_VERSION } from './demo.js';
 import { mountHrChart } from './hr-chart.js';
 import { strainSleepChart, sleepRecoveryScatter, insights } from './insights.js';
+import { BUILT_IN, DEFAULT_ON, activeQuestions, checkinCard, checkinSummary, habitImpact, demoJournal } from './journal.js';
 
 // ---- storage (everything stays on this device) -----------------------------
 const store = {
@@ -14,10 +15,13 @@ const store = {
   del(k) { try { localStorage.removeItem('pulse.' + k); } catch {} },
 };
 
-const DEFAULTS = { age: 35, maxHr: 0, sleepNeedHours: 8, importDays: 180 };
+const DEFAULTS = { age: 35, maxHr: 0, sleepNeedHours: 8, importDays: 180, questions: DEFAULT_ON, custom: [] };
 let settings = { ...DEFAULTS, ...store.get('settings', {}) };
 let raw = store.get('days', {});
 let isDemo = store.get('demo', false);
+let journal = store.get('journal', {}); // date (the morning you answered) -> { feel, a: { questionId: true/false } }
+let draft = null;                        // answers being filled in, before Save
+let editing = null;                      // date whose check-in is open for editing
 let scored = [];
 let idx = 0;
 let tab = 'today';
@@ -84,11 +88,26 @@ function renderEmpty() {
   </div>`;
 }
 
+function checkinFor(d) {
+  const today = localKey(new Date());
+  const isLatest = idx === scored.length - 1;
+  // The latest day shows today's check-in, even if the Health data hasn't caught up to today yet.
+  const date = isLatest && d.date <= today ? today : d.date;
+  const entry = journal[date];
+  if (editing === date || (!entry && date === today)) {
+    if (!draft || draft.date !== date) draft = { date, feel: entry?.feel || 0, a: { ...(entry?.a || {}) } };
+    return { top: checkinCard(date, draft, activeQuestions(settings), date === today), bottom: '' };
+  }
+  if (entry) return { top: '', bottom: checkinSummary(date, entry, settings) };
+  return { top: '', bottom: `<button class="btn ghost" data-jedit="${date}" style="margin-bottom:12px">Add a check-in for this day</button>` };
+}
+
 function renderToday(d) {
+  const ci = checkinFor(d);
   const target = strainTarget(d.recovery);
   const sleepText = d.sleepPerf != null ? d.sleepPerf + '%' : '–';
   const w = d.workouts || [];
-  view.innerHTML = `
+  view.innerHTML = `${ci.top}
     <div class="dials">
       ${dial(d.recovery, 100, recoveryColor(d.recovery), 'Recovery', d.recovery != null ? d.recovery + '%' : '–')}
       ${dial(d.strain, 21, 'var(--strain)', 'Strain', d.strain != null ? d.strain.toFixed(1) : '–')}
@@ -128,7 +147,8 @@ function renderToday(d) {
       ${w.length ? `<ul class="list" style="margin-top:12px">${w.map((x) => `<li><span>${esc(x.type)}<br><span class="muted">${fmtTime(x.start)}</span></span><span style="text-align:right">${x.min} min${x.kcal ? `<br><span class="muted">${x.kcal} kcal</span>` : ''}</span></li>`).join('')}</ul>` : ''}
     </section>
 
-    ${sleepCard(d, true)}`;
+    ${sleepCard(d, true)}
+    ${ci.bottom}`;
   mountHrChart(document.getElementById('hrChart'), scored, d.date);
 }
 
@@ -246,6 +266,9 @@ function renderTrends() {
     <section class="card"><h2>What your data says</h2>
       <p class="note">From your last 90 days.</p>
       ${insights(scored)}</section>
+    <section class="card"><h2>Habits &amp; recovery</h2>
+      <p class="note" style="margin-bottom:10px">From your morning check-ins.</p>
+      ${habitImpact(scored, journal, settings)}</section>
     <section class="card chart"><h2>Sleep vs recovery</h2>
       ${sleepRecoveryScatter(scored.slice(-Math.max(trendRange, 30)))}</section>
     <section class="card chart"><h2>Recovery · avg ${avg('recovery') != null ? Math.round(avg('recovery')) + '%' : '–'}</h2>
@@ -290,6 +313,18 @@ function renderSettings() {
     </section>
 
     <section class="card">
+      <h2>Morning questions</h2>
+      <p class="note">Field Line asks these when you open it each morning. Tick the ones you want.</p>
+      ${[...BUILT_IN, ...settings.custom].map((q) => `<label class="row qrow"><span>${esc(q.q)}</span>
+        <span style="display:flex;gap:10px;align-items:center">${q.id.startsWith('c_') ? `<button class="link" data-delq="${q.id}">Remove</button>` : ''}
+        <input type="checkbox" class="qtoggle" data-q="${q.id}" ${settings.questions.includes(q.id) ? 'checked' : ''}></span></label>`).join('')}
+      <div class="addq">
+        <input type="text" id="newQ" placeholder="Add your own, e.g. Train after 7 pm?" maxlength="80">
+        <button class="btn ghost" id="addQ">Add</button>
+      </div>
+    </section>
+
+    <section class="card">
       <h2>Data</h2>
       <p>${n ? `${n} days stored on this device${isDemo ? ' (demo data)' : ''}.` : 'No data yet.'}</p>
       <button class="btn ghost" id="tryDemo">Load demo data</button>
@@ -325,7 +360,7 @@ function runImport(file) {
     }
     if (m.done) {
       worker.terminate();
-      if (isDemo) raw = {};
+      if (isDemo) { raw = {}; journal = {}; store.del('journal'); }
       isDemo = false;
       Object.assign(raw, m.days);
       const saved = store.set('days', raw);
@@ -381,14 +416,53 @@ view.addEventListener('click', (e) => {
     rescore(); idx = scored.length - 1; go('today');
   } else if (t.id === 'clear') {
     if (confirm('Delete all Field Line data from this device?')) {
-      raw = {}; isDemo = false; store.del('days'); store.del('demo'); rescore(); render();
+      raw = {}; isDemo = false; journal = {}; store.del('days'); store.del('demo'); store.del('journal'); rescore(); render();
     }
   } else if (t.id === 'pick') $('#file').click();
+  // morning check-in
+  else if (t.dataset.feel) {
+    draft.feel = draft.feel === +t.dataset.feel ? 0 : +t.dataset.feel;
+    t.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', +b.dataset.feel === draft.feel));
+  } else if (t.dataset.ans) {
+    const id = t.dataset.ans, v = t.dataset.v === '1';
+    if (draft.a[id] === v) delete draft.a[id]; else draft.a[id] = v; // tap again to clear
+    t.parentElement.querySelectorAll('button').forEach((b) => {
+      const on = draft.a[id] === (b.dataset.v === '1');
+      b.classList.toggle('on', on); b.classList.toggle('yes', on && b.dataset.v === '1'); b.classList.toggle('no', on && b.dataset.v === '0');
+    });
+  } else if (t.id === 'jSave') {
+    journal[draft.date] = { feel: draft.feel || null, a: draft.a, at: Date.now() };
+    store.set('journal', journal);
+    draft = null; editing = null;
+    renderToday(scored[idx]);
+  } else if (t.dataset.jedit) {
+    editing = t.dataset.jedit; draft = null;
+    renderToday(scored[idx]); window.scrollTo(0, 0);
+  } else if (t.id === 'addQ') {
+    const text = $('#newQ').value.trim();
+    if (!text) return;
+    const id = 'c_' + Date.now().toString(36);
+    settings.custom = [...settings.custom, { id, q: text.endsWith('?') ? text : text + '?', short: text.replace(/\?$/, '').slice(0, 22) }];
+    settings.questions = [...settings.questions, id];
+    store.set('settings', settings); renderSettings();
+  } else if (t.dataset.delq) {
+    e.preventDefault();
+    settings.custom = settings.custom.filter((q) => q.id !== t.dataset.delq);
+    settings.questions = settings.questions.filter((q) => q !== t.dataset.delq);
+    store.set('settings', settings); renderSettings();
+  }
 });
 
 view.addEventListener('change', (e) => {
   const el = e.target;
   if (el.id === 'file' && el.files[0]) return runImport(el.files[0]);
+  if (el.classList.contains('qtoggle')) {
+    const id = el.dataset.q;
+    settings.questions = el.checked ? [...settings.questions, id] : settings.questions.filter((q) => q !== id);
+    store.set('settings', settings);
+    return;
+  }
+  if (el.id === 'newQ') return;
   if (el.id in settings) {
     settings[el.id] = el.value === '' ? 0 : +el.value;
     store.set('settings', settings);
@@ -412,6 +486,8 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {
 function loadDemo() {
   raw = demoDays(); isDemo = true;
   store.set('days', raw); store.set('demo', DEMO_VERSION);
+  journal = demoJournal(score(raw, settings), localKey(new Date()));
+  store.set('journal', journal);
 }
 
 // Refresh demo data saved by an older version so it has the newer charts.
