@@ -1,5 +1,5 @@
 // Made-up but realistic data so the app can be tried before importing anything.
-export const DEMO_VERSION = 3;
+export const DEMO_VERSION = 4;
 
 export function demoDays(count = 90) {
   let seed = 7;

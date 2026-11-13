@@ -2,20 +2,33 @@
 // we show how each habit lines up with your recovery.
 
 export const BUILT_IN = [
-  { id: 'alcohol', q: 'Did you have any alcohol?', short: 'Alcohol' },
-  { id: 'caffeine', q: 'Caffeine after 2 pm?', short: 'Late caffeine' },
-  { id: 'lateMeal', q: 'Eat within 2 hours of bed?', short: 'Late meal' },
-  { id: 'screens', q: 'Use your phone in bed?', short: 'Phone in bed' },
-  { id: 'stress', q: 'Feel stressed?', short: 'Stress' },
-  { id: 'hydrated', q: 'Drink plenty of water?', short: 'Well hydrated' },
-  { id: 'stretch', q: 'Stretch or do mobility work?', short: 'Stretching' },
-  { id: 'sore', q: 'Feel sore or unwell?', short: 'Sore or unwell' },
-  { id: 'outside', q: 'Get outside in daylight?', short: 'Daylight' },
-  { id: 'sauna', q: 'Sauna or cold plunge?', short: 'Sauna / cold' },
-  { id: 'nap', q: 'Have a nap?', short: 'Nap' },
-  { id: 'magnesium', q: 'Take magnesium?', short: 'Magnesium' },
+  { id: 'alcohol', q: 'Did you drink alcohol?', short: 'Alcohol' },
+  { id: 'caffeine', q: 'Did you have caffeine?', short: 'Caffeine' },
+  { id: 'lateMeal', q: 'Did you eat a late meal?', short: 'Late meal' },
+  { id: 'anxiety', q: 'Did you experience anxiety?', short: 'Anxiety' },
+  { id: 'journaled', q: 'Did you journal your thoughts?', short: 'Journaling' },
+  { id: 'wfh', q: 'Did you work from home?', short: 'Worked from home' },
+  { id: 'sex', q: 'Did you have sex?', short: 'Sex' },
+  { id: 'unwell', q: 'Did you feel unwell, such as having a headache or fever?', short: 'Unwell' },
+  { id: 'therapy', q: 'Did you have an ice bath, massage or acupuncture?', short: 'Ice bath / massage' },
+  { id: 'supplements', q: 'Did you take supplements, such as melatonin or turmeric?', short: 'Supplements' },
+  { id: 'blueLight', q: 'Did you wear blue-light-blocking glasses?', short: 'Blue-light glasses' },
+  { id: 'sleepAid', q: 'Did you use a sleep mask or sound machine?', short: 'Mask / sound machine' },
+  // extras you can switch on in Settings
+  { id: 'lateCaffeine', q: 'Did you have caffeine after 2 pm?', short: 'Late caffeine' },
+  { id: 'screens', q: 'Did you use your phone in bed?', short: 'Phone in bed' },
+  { id: 'stress', q: 'Did you feel stressed?', short: 'Stress' },
+  { id: 'hydrated', q: 'Did you drink plenty of water?', short: 'Well hydrated' },
+  { id: 'stretch', q: 'Did you stretch or do mobility work?', short: 'Stretching' },
+  { id: 'sore', q: 'Did you feel sore?', short: 'Sore' },
+  { id: 'outside', q: 'Did you get outside in daylight?', short: 'Daylight' },
+  { id: 'sauna', q: 'Did you have a sauna?', short: 'Sauna' },
+  { id: 'nap', q: 'Did you have a nap?', short: 'Nap' },
+  { id: 'magnesium', q: 'Did you take magnesium?', short: 'Magnesium' },
 ];
-export const DEFAULT_ON = ['alcohol', 'caffeine', 'lateMeal', 'screens', 'stress', 'hydrated', 'stretch', 'sore'];
+export const DEFAULT_ON = ['alcohol', 'caffeine', 'lateMeal', 'anxiety', 'journaled', 'wfh', 'sex', 'unwell', 'therapy', 'supplements', 'blueLight', 'sleepAid'];
+// Bump when the default question list changes, so saved settings pick up the new list once.
+export const QUESTIONS_VERSION = 2;
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const FEEL = ['Awful', 'Rough', 'OK', 'Good', 'Great'];
@@ -117,8 +130,9 @@ export function demoJournal(scored, todayKey) {
     out[d.date] = {
       feel: Math.max(1, Math.min(5, Math.round(d.recovery / 22 + rand() * 1.4 - 0.4))),
       a: {
-        alcohol: p(0.55, 0.2, 0.08), caffeine: p(0.45, 0.3, 0.2), lateMeal: p(0.5, 0.3, 0.2), screens: p(0.7, 0.5, 0.35),
-        stress: p(0.6, 0.3, 0.12), hydrated: p(0.4, 0.65, 0.85), stretch: p(0.25, 0.4, 0.6), sore: p(0.4, 0.15, 0.05),
+        alcohol: p(0.55, 0.2, 0.08), caffeine: p(0.8, 0.7, 0.6), lateMeal: p(0.5, 0.3, 0.2), anxiety: p(0.5, 0.25, 0.1),
+        journaled: p(0.15, 0.3, 0.45), wfh: p(0.4, 0.4, 0.4), sex: p(0.15, 0.2, 0.3), unwell: p(0.35, 0.08, 0.02),
+        therapy: p(0.08, 0.15, 0.3), supplements: p(0.3, 0.4, 0.5), blueLight: p(0.15, 0.3, 0.45), sleepAid: p(0.25, 0.4, 0.6),
       },
       at: Date.now(),
     };

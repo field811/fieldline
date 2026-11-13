@@ -2,7 +2,7 @@ import { score, recoveryColor, recoveryWords, strainTarget } from './scoring.js'
 import { demoDays, DEMO_VERSION } from './demo.js';
 import { mountHrChart } from './hr-chart.js';
 import { strainSleepChart, sleepRecoveryScatter, insights } from './insights.js';
-import { BUILT_IN, DEFAULT_ON, activeQuestions, checkinCard, checkinSummary, habitImpact, demoJournal } from './journal.js';
+import { BUILT_IN, DEFAULT_ON, QUESTIONS_VERSION, activeQuestions, checkinCard, checkinSummary, habitImpact, demoJournal } from './journal.js';
 
 // ---- storage (everything stays on this device) -----------------------------
 const store = {
@@ -15,8 +15,15 @@ const store = {
   del(k) { try { localStorage.removeItem('pulse.' + k); } catch {} },
 };
 
-const DEFAULTS = { age: 35, maxHr: 0, sleepNeedHours: 8, importDays: 180, questions: DEFAULT_ON, custom: [] };
+const DEFAULTS = { age: 35, maxHr: 0, sleepNeedHours: 8, importDays: 180, questions: DEFAULT_ON, custom: [], qv: QUESTIONS_VERSION };
 let settings = { ...DEFAULTS, ...store.get('settings', {}) };
+const savedSettings = store.get('settings', null);
+if (savedSettings && (savedSettings.qv || 1) < QUESTIONS_VERSION) {
+  // New default question list: switch it on, keeping any questions you added yourself.
+  settings.questions = [...DEFAULT_ON, ...settings.custom.map((q) => q.id)];
+  settings.qv = QUESTIONS_VERSION;
+  store.set('settings', settings);
+}
 let raw = store.get('days', {});
 let isDemo = store.get('demo', false);
 let journal = store.get('journal', {}); // date (the morning you answered) -> { feel, a: { questionId: true/false } }
